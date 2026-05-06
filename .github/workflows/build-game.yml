@@ -34,27 +34,28 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm GAME.spec
 
-      - name: Prepare Windows executable name
+      - name: Prepare Windows package
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          Copy-Item "dist\GAME\GAME.exe" "dist\GAME_WINDOWS.exe"
+          Compress-Archive -Path dist\GAME\* -DestinationPath dist\GAME_WINDOWS.zip
 
-      - name: Prepare Linux executable name
+      - name: Prepare Linux package
         if: runner.os == 'Linux'
         run: |
-          cp dist/GAME/GAME dist/GAME_LINUX
+          cd dist
+          zip -r GAME_LINUX.zip GAME
 
       - name: Upload Windows artifact
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: GAME_WINDOWS
-          path: dist/GAME_WINDOWS.exe
+          path: dist/GAME_WINDOWS.zip
 
       - name: Upload Linux artifact
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: GAME_LINUX
-          path: dist/GAME_LINUX
+          path: dist/GAME_LINUX.zip
