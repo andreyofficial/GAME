@@ -35,26 +35,25 @@ jobs:
       - name: Build with PyInstaller
         run: python -m PyInstaller --noconfirm GAME.spec
 
-      - name: Prepare Windows package
+      - name: Prepare Windows single-file executable
         if: runner.os == 'Windows'
         shell: powershell
         run: |
-          Compress-Archive -Path dist\GAME\* -DestinationPath dist\GAME_WINDOWS.zip
+          Copy-Item "dist\GAME.exe" "dist\GAME_WINDOWS.exe"
 
-      - name: Prepare Linux package
+      - name: Prepare Linux single-file executable
         if: runner.os == 'Linux'
         run: |
-          cd dist
-          zip -r GAME_LINUX.zip GAME
+          cp dist/GAME dist/GAME_LINUX
 
       - name: Upload release asset (Windows)
         if: runner.os == 'Windows'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/GAME_WINDOWS.zip
+          files: dist/GAME_WINDOWS.exe
 
       - name: Upload release asset (Linux)
         if: runner.os == 'Linux'
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/GAME_LINUX.zip
+          files: dist/GAME_LINUX
