@@ -1,7 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 
-base_dir = os.path.abspath(os.path.dirname(__file__))
+base_dir = os.path.abspath(os.getcwd())
 game_assets_dir = os.path.join(base_dir, 'GAME')
 legacy_assets_dir = os.path.join(base_dir, 'actually_usefull_textures')
 
