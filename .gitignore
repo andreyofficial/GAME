@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+*.pyc
+
+build/
+dist/
+installer/
+GAME_LINUX
+GAME_WINDOWS.exe
+GAME.exe
+
+.idea/
+
+*.log

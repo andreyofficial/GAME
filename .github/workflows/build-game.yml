@@ -1,0 +1,60 @@
+name: Build GAME for Linux and Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Build with PyInstaller
+        run: python -m PyInstaller --noconfirm GAME.spec
+
+      - name: Prepare Windows executable name
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          Copy-Item "dist\GAME\GAME.exe" "dist\GAME_WINDOWS.exe"
+
+      - name: Prepare Linux executable name
+        if: runner.os == 'Linux'
+        run: |
+          cp dist/GAME/GAME dist/GAME_LINUX
+
+      - name: Upload Windows artifact
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: GAME_WINDOWS
+          path: dist/GAME_WINDOWS.exe
+
+      - name: Upload Linux artifact
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: GAME_LINUX
+          path: dist/GAME_LINUX

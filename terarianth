@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GAME_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+BOOTSTRAP="$GAME_DIR/terarianth_bootstrap.py"
+
+run_python() {
+    local python_cmd="$1"
+    shift
+    exec "$python_cmd" "$BOOTSTRAP" "$@"
+}
+
+install_python_linux() {
+    if ! command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then
+        return 1
+    fi
+
+    if command -v apt-get >/dev/null 2>&1; then
+        if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then
+            sudo apt-get update
+            sudo apt-get install -y python3 python3-venv python3-pip
+        else
+            apt-get update
+            apt-get install -y python3 python3-venv python3-pip
+        fi
+        return 0
+    fi
+
+    if command -v dnf >/dev/null 2>&1; then
+        if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then
+            sudo dnf install -y python3 python3-pip
+        else
+            dnf install -y python3 python3-pip
+        fi
+        return 0
+    fi
+
+    if command -v pacman >/dev/null 2>&1; then
+        if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then
+            sudo pacman -Sy --noconfirm python python-pip
+        else
+            pacman -Sy --noconfirm python python-pip
+        fi
+        return 0
+    fi
+
+    if command -v zypper >/dev/null 2>&1; then
+        if command -v sudo >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then
+            sudo zypper --non-interactive install python3 python3-pip
+        else
+            zypper --non-interactive install python3 python3-pip
+        fi
+        return 0
+    fi
+
+    return 1
+}
+
+if command -v python3 >/dev/null 2>&1; then
+    run_python "$(command -v python3)" "$@"
+fi
+
+if command -v python >/dev/null 2>&1; then
+    run_python "$(command -v python)" "$@"
+fi
+
+echo "Python 3 was not found. Trying to install it..."
+
+if install_python_linux; then
+    if command -v python3 >/dev/null 2>&1; then
+        run_python "$(command -v python3)" "$@"
+    fi
+
+    if command -v python >/dev/null 2>&1; then
+        run_python "$(command -v python)" "$@"
+    fi
+fi
+
+echo "Python 3 is required to launch terarianth."
+echo "Install Python 3 and run ./terarianth again."
+exit 1

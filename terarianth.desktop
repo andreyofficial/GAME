@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=terarianth
+Comment=Launch terarianth
+Path=/home/a/Desktop/GAME
+Exec=/home/a/Desktop/GAME/terarianth
+Icon=/home/a/Desktop/GAME/actually_usefull_textures/sword.png
+Terminal=false
+Categories=Game;
