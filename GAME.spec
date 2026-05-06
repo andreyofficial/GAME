@@ -8,7 +8,7 @@ legacy_assets_dir = os.path.join(base_dir, 'actually_usefull_textures')
 datas = []
 if os.path.isdir(game_assets_dir):
     datas.append((game_assets_dir, 'GAME'))
-elif os.path.isdir(legacy_assets_dir):
+if os.path.isdir(legacy_assets_dir):
     datas.extend([
         ('actually_usefull_textures', 'actually_usefull_textures'),
         ('asstes', 'asstes'),

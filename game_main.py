@@ -70,12 +70,26 @@ clock = pygame.time.Clock()
 
 if getattr(sys, "frozen", False):
     BASE = os.path.dirname(sys.executable)
+    BUNDLED_BASE = getattr(sys, "_MEIPASS", BASE)
 else:
     BASE = os.path.dirname(os.path.abspath(__file__))
+    BUNDLED_BASE = BASE
 
-# Prefer loading game assets from BASE/GAME when available.
-GAME_ASSET_ROOT = os.path.join(BASE, "GAME")
-if not os.path.isdir(GAME_ASSET_ROOT):
+# Look for assets in bundled one-file temp dir first, then beside the exe.
+ASSET_SEARCH_ROOTS = [
+    os.path.join(BUNDLED_BASE, "GAME"),
+    BUNDLED_BASE,
+    os.path.join(BASE, "GAME"),
+    BASE,
+]
+
+GAME_ASSET_ROOT = None
+for candidate in ASSET_SEARCH_ROOTS:
+    if os.path.isdir(candidate):
+        GAME_ASSET_ROOT = candidate
+        break
+
+if GAME_ASSET_ROOT is None:
     GAME_ASSET_ROOT = BASE
 
 TEX_DIR = os.path.join(GAME_ASSET_ROOT, "actually_usefull_textures")
