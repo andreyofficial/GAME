@@ -12,9 +12,6 @@ import sys
 import webbrowser
 from array import array
 from collections import Counter, deque
-import importlib
-import subprocess
-import sys
 
 def ensure_package(module_name, pip_name):
     if getattr(sys, "frozen", False):
@@ -258,7 +255,15 @@ GAME_MODE_DESCRIPTIONS = {
     "hard": "Night is 2x longer, mobs are tougher.",
     "creative": "Infinite stats, no mob spawns."
 }
-WORLD_ICON_CHOICES = ["sword", "axe", "wall", "torch", "water_bucket", "steak"]
+WORLD_ICON_CHOICES = [
+    "sword",
+    "axe",
+    "pickaxe",
+    "wall",
+    "torch",
+    "water_bucket",
+    "steak"
+]
 game_mode = "easy"
 selected_game_mode = "easy"
 enemy_health_multiplier = 1.0
@@ -418,6 +423,14 @@ MENU_BG_CACHE_MS = 300
 MENU_MIN_FPS = 240
 SETTINGS_PATH = os.path.join(BASE, "settings.json")
 GITHUB_URL = "https://github.com/andreyofficial"
+GAME_VERSION = "1.1.0"
+
+try:
+    from updater import check_and_apply_update
+except ImportError:
+    def check_and_apply_update(_current_version):
+        return False
+
 ENABLE_SFX = False
 ENABLE_FOG_EFFECTS = False
 
@@ -513,6 +526,7 @@ WALL_ITEM_IDS = [
 ITEM_IDS = [
     "sword",
     "axe",
+    "pickaxe",
     "steak",
     "door",
     "floor",
@@ -522,11 +536,12 @@ ITEM_IDS = [
     "book_and_quill",
     "snowball"
 ] + WALL_ITEM_IDS
-MELEE_ITEM_IDS = {"sword", "axe"}
+MELEE_ITEM_IDS = {"sword", "axe", "pickaxe"}
 PLACEABLE_ITEM_IDS = set(WALL_ITEM_IDS + ["door", "floor", "torch", "water_bucket", "lava_bucket"])
 DEFAULT_INVENTORY_ITEMS = [
     "sword",
     "axe",
+    "pickaxe",
     "steak",
     "book_and_quill",
     "wall",
@@ -549,6 +564,9 @@ MAX_ACTIVE_PROJECTILES = 90
 player_lava_damage_timer = 0.0
 WATERLIKE_TILE_IDS = {"water", "ocean"}
 LIQUID_TILE_IDS = {"water", "ocean", "lava"}
+
+PICKAXE_MINE_REACH_PX = TILE * 4
+LAVA_WATER_SAND_RADIUS_TILES = 9
 
 
 def clear_world_runtime_cache():
@@ -1695,7 +1713,7 @@ def build_default_inventory():
 
 
 def build_default_hotbar():
-    return SPELL_HOTBAR_ENTRIES + ["sword", "wall", "door", "floor"]
+    return SPELL_HOTBAR_ENTRIES + ["sword", "pickaxe", "door", "floor"]
 
 
 def get_hotbar_slot_key_label(index):
@@ -1707,6 +1725,7 @@ def get_item_label(item_id):
     labels = {
         "sword": "SWORD",
         "axe": "AXE",
+        "pickaxe": "PICKAXE",
         "steak": "STEAK",
         "wall": "WALL",
         "wall1": "WALL 1",
@@ -1737,6 +1756,7 @@ def get_compact_item_label(item_id):
     labels = {
         "sword": "SWORD",
         "axe": "AXE",
+        "pickaxe": "PICKAXE",
         "steak": "STEAK",
         "wall": "WALL",
         "wall1": "WALL1",
@@ -2137,7 +2157,7 @@ def place_equipped_item_at_mouse(mouse_pos):
         placed_water.discard(tile_pos)
         drained_water.discard(tile_pos)
         placed_lava.add(tile_pos)
-        add_stone1_ring_around_lava(tile_pos)
+        convert_surrounding_water_to_sand(tile_pos)
         invalidate_terrain_caches(tile_pos)
         play_sfx("place")
         return True
@@ -4120,6 +4140,18 @@ def load_tex(name, fallback_color):
         pygame.draw.circle(fallback, (196, 204, 222), (26, 39), 5)
         return fallback
 
+    if lowered == "pickaxe.png":
+        fb = pygame.Surface((64, 64), pygame.SRCALPHA)
+        pygame.draw.rect(fb, (132, 140, 152), (14, 36, 30, 8), border_radius=3)
+        pygame.draw.polygon(
+            fb,
+            (168, 176, 188),
+            [(28, 12), (44, 22), (38, 44), (26, 42), (18, 26)]
+        )
+        pygame.draw.line(fb, (90, 96, 106), (36, 24), (32, 54), 5)
+        pygame.draw.line(fb, (118, 126, 138), (36, 24), (32, 54), 2)
+        return fb
+
     return make_generic_tile(fallback_color)
 
 
@@ -4190,6 +4222,7 @@ floor_img = load_tex("floor.png", (112, 112, 124))
 torch_img = load_tex("torch.png", (64, 64, 255))
 sword_img = load_tex("sword.png", (64, 64, 255))
 axe_img = load_tex("axe.png", (64, 64, 255))
+pickaxe_img = load_tex("pickaxe.png", (148, 148, 160))
 steak_img = load_tex("steak.png", (64, 64, 255))
 water_bucket_img = load_tex("water_bucket.png", (64, 64, 255))
 lava_bucket_img = load_tex("lava_bucket.png", (64, 64, 255))
@@ -4589,24 +4622,38 @@ def invalidate_terrain_caches(tile_pos, radius=1):
             shore_cache.pop((tile_x + dx, tile_y + dy), None)
 
 
-def add_stone1_ring_around_lava(tile_pos):
-    tile_x, tile_y = tile_pos
+def convert_surrounding_water_to_sand(
+        center_tile,
+        radius_tiles=LAVA_WATER_SAND_RADIUS_TILES
+):
+    """
+    Lava heats nearby water/ocean only: those tiles become sand. Other tiles unchanged.
+    Uses Chebyshev distance (square) up to radius_tiles from the lava cell.
+    """
+    cx, cy = center_tile
 
-    for dx in [-1, 0, 1]:
-        for dy in [-1, 0, 1]:
+    for dx in range(-radius_tiles, radius_tiles + 1):
+        for dy in range(-radius_tiles, radius_tiles + 1):
             if dx == 0 and dy == 0:
                 continue
 
-            neighbor = (tile_x + dx, tile_y + dy)
-            if neighbor in placed_lava:
+            tx, ty = cx + dx, cy + dy
+
+            if get_tile(tx, ty) not in WATERLIKE_TILE_IDS:
                 continue
 
-            forced_stone1_tiles.add(neighbor)
-            placed_water.discard(neighbor)
-            drained_water.discard(neighbor)
-            world.pop(neighbor, None)
+            placed_water.discard((tx, ty))
+            placed_lava.discard((tx, ty))
+            placed_floors.discard((tx, ty))
+            torch_positions.discard((tx, ty))
+            torch_mounts.pop((tx, ty), None)
+            drained_water.discard((tx, ty))
+            forced_stone1_tiles.discard((tx, ty))
+            world[(tx, ty)] = "sand"
 
-    invalidate_terrain_caches(tile_pos, radius=2)
+            invalidate_terrain_caches((tx, ty), radius=1)
+
+    invalidate_terrain_caches(center_tile, radius=radius_tiles + 1)
 
 
 def replace_water_with_sand(tile_pos):
@@ -4635,6 +4682,31 @@ def replace_lava_with_sand(tile_pos):
     torch_positions.discard(tile_pos)
     torch_mounts.pop(tile_pos, None)
     drained_water.add(tile_pos)
+    invalidate_terrain_caches(tile_pos)
+    return True
+
+
+def try_pickaxe_mine_floor_at_mouse(mouse_pos):
+    world_x, world_y = get_world_pos_from_screen(mouse_pos)
+    tile_pos = (int(world_x // TILE), int(world_y // TILE))
+
+    if tile_pos not in placed_floors:
+        return False
+
+    tcx = tile_pos[0] * TILE + TILE // 2
+    tcy = tile_pos[1] * TILE + TILE // 2
+
+    if math.hypot(player.centerx - tcx, player.centery - tcy) > PICKAXE_MINE_REACH_PX:
+        return False
+
+    placed_floors.discard(tile_pos)
+    placed_water.discard(tile_pos)
+    placed_lava.discard(tile_pos)
+    torch_positions.discard(tile_pos)
+    torch_mounts.pop(tile_pos, None)
+    drained_water.discard(tile_pos)
+    forced_stone1_tiles.discard(tile_pos)
+    world[tile_pos] = "sand"
     invalidate_terrain_caches(tile_pos)
     return True
 
@@ -6712,6 +6784,7 @@ snowball_projectile_frames = [pygame.transform.smoothscale(snowball_img, (22, 22
 item_icons = {
     "sword": build_icon_from_surface(sword_img) if sword_img else make_sword_icon(),
     "axe": build_icon_from_surface(axe_img),
+    "pickaxe": build_icon_from_surface(pickaxe_img),
     "steak": build_icon_from_surface(steak_img),
     "wall": build_icon_from_surface(wall_textures["wall"]),
     "wall1": build_icon_from_surface(wall_textures["wall1"]),
@@ -6807,6 +6880,10 @@ projectiles = []
 load_global_settings()
 set_display_mode(fullscreen)
 init_audio()
+
+if check_and_apply_update(GAME_VERSION):
+    pygame.quit()
+    sys.exit(0)
 
 # =============================
 # MAIN LOOP
@@ -7475,6 +7552,24 @@ while True:
             if e.button == 1:
                 active_entry = get_active_hotbar_entry()
 
+                if active_entry == "pickaxe" and not locked and stam >= 4:
+                    mouse_pos = scale_mouse_pos(e.pos)
+                    world_x, world_y = get_world_pos_from_screen(mouse_pos)
+
+                    if try_pickaxe_mine_floor_at_mouse(mouse_pos):
+                        stam = max(0, stam - 6)
+                        play_sfx("break")
+                        spawn_particles(
+                            (world_x, world_y),
+                            (218, 196, 128),
+                            10
+                        )
+                        log_player_action(
+                            "Pickaxe",
+                            f"floor to sand at {int(world_x // TILE)},{int(world_y // TILE)}"
+                        )
+                        continue
+
                 if active_entry == "book_and_quill":
                     book_open = True
                     book_cursor_blink_on = True
@@ -7509,8 +7604,15 @@ while True:
                     frame = 0
                     locked = True
                     heavy_strike = active_entry == "axe"
-                    attack_size = 110 if active_entry == "axe" else 90
-                    base_damage = 32 if active_entry == "axe" else 20
+                    if active_entry == "axe":
+                        attack_size = 110
+                        base_damage = 32
+                    elif active_entry == "pickaxe":
+                        attack_size = 96
+                        base_damage = 22
+                    else:
+                        attack_size = 90
+                        base_damage = 20
                     melee_damage = int(round(base_damage * get_melee_damage_multiplier()))
                     attack_box = pygame.Rect(
                         player.centerx - attack_size // 2,
@@ -7929,13 +8031,25 @@ while True:
                     surf.blit(desert_rock_tile, (x, y))
 
             if (wx, wy) in placed_floors:
+                # Draw shadow
+                shadow_surf = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                shadow_surf.fill((0, 0, 0, 100))
+                surf.blit(shadow_surf, (x + 3, y + 3))
                 surf.blit(floor_img, (x, y))
 
             if (wx, wy) in torch_positions:
                 torch_mount = torch_mounts.get((wx, wy), "ground")
                 if torch_mount == "wall":
+                    # Draw shadow
+                    shadow_surf = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                    shadow_surf.fill((0, 0, 0, 100))
+                    surf.blit(shadow_surf, (x + 3, y - 20 + 3))
                     surf.blit(torch_img, (x, y - 20))
                 else:
+                    # Draw shadow
+                    shadow_surf = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                    shadow_surf.fill((0, 0, 0, 100))
+                    surf.blit(shadow_surf, (x + 3, y + 3))
                     surf.blit(torch_img, (x, y))
 
             if (
@@ -7949,9 +8063,17 @@ while True:
                 wall_item_id = wall_types.get((wx, wy), "wall")
                 wall_surface = wall_textures.get(wall_item_id, wall_textures["wall"])
                 if wall_surface:
+                    # Draw shadow
+                    shadow_surf = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                    shadow_surf.fill((0, 0, 0, 100))
+                    surf.blit(shadow_surf, (x + 3, y + 3))
                     surf.blit(wall_surface, (x, y))
 
                 else:
+                    # Draw shadow for fallback wall
+                    shadow_surf = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                    shadow_surf.fill((0, 0, 0, 100))
+                    surf.blit(shadow_surf, (x + 3, y + 3))
                     pygame.draw.rect(
                         surf,
                         (120, 120, 120),
@@ -7961,9 +8083,17 @@ while True:
             if (wx, wy) in doors:
 
                 if (wx, wy) in open_doors:
+                    # Draw shadow
+                    shadow_surf = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                    shadow_surf.fill((0, 0, 0, 100))
+                    surf.blit(shadow_surf, (x + 3, y + 3))
                     surf.blit(door_open_img, (x, y))
 
                 else:
+                    # Draw shadow
+                    shadow_surf = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                    shadow_surf.fill((0, 0, 0, 100))
+                    surf.blit(shadow_surf, (x + 3, y + 3))
                     surf.blit(door_img, (x, y))
 
     # ================= ENEMY DRAW
